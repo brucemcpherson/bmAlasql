@@ -23,14 +23,14 @@ var GasSql = (() => {
           columns.set(name, {
             name,
             index,
-            type
+            type: type === 'string' && type === '' ? undefined : type
           })
         } else {
           // may need to tweak the type
           const m = columns.get(name)
           // TODO deal with Date && null
           if (!m.type !== type) {
-            if (m.type === typeof undefined || type === 'string') {
+            if (m.type === typeof undefined || (type === 'string' && row[name] !== '')) {
               m.type = type
             } else {
               // TODO deal with other exceptions
@@ -39,6 +39,10 @@ var GasSql = (() => {
         }
       })
     })
+    // set default tyoe to string
+    for (let [k,c] of columns) {
+      if(!c.type) c.type ='string'
+    }
     return columns
   }
 
@@ -79,9 +83,9 @@ var GasSql = (() => {
     // todo deal with dates/undef etc
     switch (type) {
       case 'string':
-        return `'${value}'`
+        return `'${value.toString().replace(/\'/,"''")}'`
       case 'number':
-        return value
+        return value || 0
       default:
         throw new Error(`type ${type} not yet supported`)
     }
@@ -127,7 +131,6 @@ var GasSql = (() => {
     })
 
     const sql = `INSERT INTO ${name} VALUES ${rows.map(v => ('(' + (v.map(f => typify(f.value, f.type)).join(',')) + ')')).join(',')}`
-
     return exec({ sql })
   }
   return {
