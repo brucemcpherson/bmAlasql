@@ -1,12 +1,15 @@
 /**
  * TableDefinition type
  * @typedef {Object} TableDefinition
- * @property {string} name - column name
+ * @property {string} name - column name 
  * @property {number} [index] - the position in which it first appears (according to Object.keys)
  * @property {string} type - the most likely type (if multiple types detected will default to string) null and undefined are overridden with any proper type
  */
 
 var GasSql = (() => {
+  
+  const fixName = (name) => name.toLowerCase().replace(/\s/g,'_')
+
   /**
    * organizes an array of data objects into something we can use to populate an sql table
    * @param {object[]} data an array of objects
@@ -18,16 +21,23 @@ var GasSql = (() => {
     const columns = new Map()
     data.forEach(row => {
       Object.keys(row).forEach((name, index) => {
+        // names are always lower cased as this sql is case insensitive
+        colName = fixName(name)
         const type = typeof row[name]
-        if (!columns.has(name)) {
-          columns.set(name, {
+       
+        if (!columns.has(colName)) {
+          columns.set(colName, {
             name,
             index,
-            type: type === 'string' && type === '' ? undefined : type
+            type: type === 'string' && type === '' ? undefined : type,
+            colName
           })
         } else {
           // may need to tweak the type
-          const m = columns.get(name)
+          const m = columns.get(colName)
+          if(name !== m.name) {
+            throw new Error (`sql duplicate name ${name}/${m.name} - maybe because of case sensitivity or spaces`)
+          }
           // TODO deal with Date && null
           if (!m.type !== type) {
             if (m.type === typeof undefined || (type === 'string' && row[name] !== '')) {
@@ -54,7 +64,7 @@ var GasSql = (() => {
    */
   const makeSqlCreateTable = ({ name, tableDefinitions }) => {
     return {
-      sql: `CREATE TABLE ${name} (${Array.from(tableDefinitions).map(([key, value]) => {
+      sql: `CREATE TABLE ${fixName(name)} (${Array.from(tableDefinitions).map(([key, value]) => {
         return key + ' ' + value.type
       }).join(',')})`
     }
@@ -83,9 +93,10 @@ var GasSql = (() => {
     // todo deal with dates/undef etc
     switch (type) {
       case 'string':
+        if (typeof value === typeof undefined) return "''''"
         return `'${value.toString().replace(/\'/,"''")}'`
       case 'number':
-        return value || 0
+        return parseFloat(value || '0')
       default:
         throw new Error(`type ${type} not yet supported`)
     }
@@ -103,12 +114,16 @@ var GasSql = (() => {
       ...sql,
       tableDefinitions,
       exec: exec(sql),
-      name,
+      name: fixName(name),
     }
   }
+
   const insert = ({ name, values }) => {
-    const sql = `INSERT INTO ${name} VALUES ${values.map(v => ('(' + (v.map(f => typify(f)).join(',')) + ')')).join(',')}`
-    return exec({ sql })
+    const sql = `INSERT INTO ${fixName(name)} VALUES ${values.map(v => ('(' + (v.map(f => typify(f)).join(',')) + ')')).join(',')}`
+    return {
+      exec: exec({ sql }),
+      sql
+    }
   }
 
   const createAndInsertFromData = ({name, data}) => {
@@ -130,8 +145,12 @@ var GasSql = (() => {
       })
     })
 
-    const sql = `INSERT INTO ${name} VALUES ${rows.map(v => ('(' + (v.map(f => typify(f.value, f.type)).join(',')) + ')')).join(',')}`
-    return exec({ sql })
+    const sql = `INSERT INTO ${name.toLowerCase()} VALUES ${rows.map(v => ('(' + (v.map(f => typify(f.value, f.type)).join(',')) + ')')).join(',')}`
+    return {
+      exec: exec({ sql }),
+      name,
+      tableDefinitions
+    } 
   }
   return {
     exec,
@@ -139,6 +158,8 @@ var GasSql = (() => {
     createTableFromData,
     insert,
     insertFromData,
-    createAndInsertFromData
+    createAndInsertFromData,
+    typify,
+    fixName
   }
 })()
